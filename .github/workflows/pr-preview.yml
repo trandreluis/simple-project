@@ -4,6 +4,10 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, closed]
 
+permissions:
+  pull-requests: write
+  contents: read
+
 jobs:
   preview:
     runs-on: self-hosted
