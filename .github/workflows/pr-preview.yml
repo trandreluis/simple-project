@@ -26,6 +26,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-maven-
 
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-docker-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-docker-
+
       - name: Build simple-project app
         if: github.event.action != 'closed'
         run: |
@@ -37,6 +45,12 @@ jobs:
         id: preview
         run: |
           chmod +x .github/scripts/start-preview.sh
+          # habilitar cache de buildx
+          docker buildx create --use --name buildx-simple || docker buildx use buildx-simple
+          docker buildx build --cache-from=type=local,src=/tmp/.buildx-cache \
+                              --cache-to=type=local,dest=/tmp/.buildx-cache-new,mode=max \
+                              -t simple-project-pr${{ github.event.number }}:latest .
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
           URL=$(.github/scripts/start-preview.sh ${{ github.event.number }})
           echo "preview_url=$URL" >> $GITHUB_OUTPUT
 
