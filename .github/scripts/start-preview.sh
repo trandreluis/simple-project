@@ -13,13 +13,18 @@ echo "[INFO] Iniciando preview para PR #${PR_NUMBER} na porta ${PORT}"
 docker rm -f ${APP_NAME} || true
 
 # Garantir que o builder buildx existe
-docker buildx create --use --name buildx-simple || docker buildx use buildx-simple
+if ! docker buildx inspect buildx-simple >/dev/null 2>&1; then
+  docker buildx create --use --name buildx-simple
+else
+  docker buildx use buildx-simple
+fi
 
-# Build imagem docker com cache
+# Build imagem docker com cache e carregando no Docker local
 docker buildx build \
   --cache-from=type=local,src=${CACHE_DIR} \
   --cache-to=type=local,dest=${CACHE_DIR}-new,mode=max \
-  -t ${APP_NAME}:latest .
+  -t ${APP_NAME}:latest . \
+  --load
 
 # Atualizar cache
 rm -rf ${CACHE_DIR}
