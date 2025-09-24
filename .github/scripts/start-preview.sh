@@ -22,14 +22,28 @@ docker run -d --name ${APP_NAME} -p ${HOST_PORT}:8080 ${APP_NAME}:latest
 docker run -d --name ${NGROK_NAME} \
   -e NGROK_AUTHTOKEN="${NGROK_AUTHTOKEN}" \
   --network host \
-  ngrok/ngrok:latest http ${HOST_PORT} > /tmp/${NGROK_NAME}.log 2>&1 &
+  ngrok/ngrok:latest http ${HOST_PORT} > /tmp/${NGROK_NAME}.log 2>&1
 
-# Aguardar o ngrok iniciar e capturar a URL
-sleep 5
-URL=$(docker logs ${NGROK_NAME} 2>&1 | grep -o 'https://[0-9a-z]*\.ngrok-free\.app' | head -n 1)
+# Confirmar que o container subiu
+if ! docker ps --format '{{.Names}}' | grep -q "${NGROK_NAME}"; then
+  echo "[ERRO] Container do ngrok não iniciou corretamente."
+  docker logs ${NGROK_NAME} || true
+  exit 1
+fi
+
+# Aguardar e tentar capturar a URL até 5 vezes
+URL=""
+for i in {1..5}; do
+  sleep 3
+  URL=$(docker logs ${NGROK_NAME} 2>&1 | grep -o 'https://[0-9a-z]*\.ngrok-free\.app' | head -n 1)
+  if [ -n "$URL" ]; then
+    break
+  fi
+done
 
 if [ -z "$URL" ]; then
   echo "[ERRO] Não foi possível capturar a URL do Ngrok. Veja os logs em /tmp/${NGROK_NAME}.log"
+  docker logs ${NGROK_NAME} || true
   exit 1
 fi
 
