@@ -28,8 +28,8 @@ docker buildx build \
 rm -rf ${CACHE_DIR}
 mv ${CACHE_DIR}-new ${CACHE_DIR}
 
-# Rodar container da app
-docker run -d --name ${APP_NAME} -p ${PORT}:8080 ${APP_NAME}:latest
+# Rodar container da app (captura o ID mas não imprime)
+CONTAINER_ID=$(docker run -d --name ${APP_NAME} -p ${PORT}:8080 ${APP_NAME}:latest)
 
 # Matar ngrok anterior se existir
 pkill -f "${NGROK_NAME}" || true
