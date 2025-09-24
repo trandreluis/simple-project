@@ -20,19 +20,35 @@ docker buildx build \
 # Rodar container da aplicação
 docker run -d --name ${APP_NAME} -p ${HOST_PORT}:8080 ${APP_NAME}:latest
 
+# Verificar se token do Ngrok está configurado
+if [ -z "$NGROK_AUTHTOKEN" ]; then
+  echo "[ERRO] NGROK_AUTHTOKEN não definido. Configure como secret no GitHub."
+  exit 1
+fi
+
 # Subir ngrok em container separado
 docker run -d --name ${NGROK_NAME} --network host \
   -e NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN} \
   ngrok/ngrok:latest http ${HOST_PORT} > "${LOG_FILE}" 2>&1 || true
 
-# Aguardar ngrok subir e pegar URL
-sleep 5
-NGROK_URL=$(docker logs ${NGROK_NAME} 2>&1 | grep -oE "https://[0-9a-z]+\.ngrok-free\.app" | head -n 1)
+# Aguardar até 30s pelo ngrok
+NGROK_URL=""
+for i in {1..30}; do
+  NGROK_URL=$(docker logs ${NGROK_NAME} 2>&1 | grep -oE "https://[0-9a-z]+\.ngrok-free\.app" | head -n 1 || true)
+  if [ -n "$NGROK_URL" ]; then
+    break
+  fi
+  echo "[INFO] Aguardando ngrok subir... (${i}s)"
+  sleep 1
+done
 
 if [ -z "$NGROK_URL" ]; then
-  echo "[ERRO] Não foi possível capturar a URL do Ngrok"
+  echo "[ERRO] Não foi possível capturar a URL do Ngrok após 30s."
+  echo "[DEBUG] Logs do container do ngrok:"
+  docker logs ${NGROK_NAME} || true
   exit 1
 fi
 
 echo "[INFO] URL pública: $NGROK_URL"
+# A URL do ngrok será a última linha da saída (mantendo compatibilidade com o workflow)
 echo "$NGROK_URL"
