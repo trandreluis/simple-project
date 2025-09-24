@@ -20,7 +20,9 @@ jobs:
 
       - name: Build simple-project app
         if: github.event.action != 'closed'
-        run: ./mvnw clean package -DskipTests
+        run: |
+          chmod +x mvnw
+          ./mvnw clean package -DskipTests
 
       - name: Start Preview (container + ngrok)
         if: github.event.action != 'closed'
