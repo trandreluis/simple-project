@@ -2,40 +2,37 @@
 set -e
 
 PR_NUMBER=$1
-APP_NAME="simple-project"
-CONTAINER_NAME="${APP_NAME}-pr${PR_NUMBER}"
+APP_NAME="simple-project-pr${PR_NUMBER}"
+NGROK_NAME="ngrok-pr${PR_NUMBER}"
 HOST_PORT=$((8000 + PR_NUMBER))
-LOG_FILE="ngrok-${PR_NUMBER}.log"
+CACHE_DIR="/tmp/.buildx-cache"
+LOG_FILE="/tmp/${APP_NAME}.log"
 
-echo "[INFO] Iniciando preview para PR #${PR_NUMBER} na porta ${HOST_PORT}..."
+echo "[INFO] Iniciando preview para PR #${PR_NUMBER}"
 
-# Build da imagem
-docker build -t "${CONTAINER_NAME}:latest" .
+# Construir imagem
+docker buildx build \
+  --cache-to=type=local,dest=${CACHE_DIR},mode=max \
+  --cache-from=type=local,src=${CACHE_DIR} \
+  -t ${APP_NAME}:latest \
+  --load .
 
-# Remove container antigo se existir
-if [ "$(docker ps -aq -f name=${CONTAINER_NAME})" ]; then
-  docker rm -f "${CONTAINER_NAME}" || true
-fi
+# Rodar container da aplicação
+docker run -d --name ${APP_NAME} -p ${HOST_PORT}:8080 ${APP_NAME}:latest
 
-# Sobe o container com porta exclusiva
-docker run -d --name "${CONTAINER_NAME}" -p ${HOST_PORT}:8080 "${CONTAINER_NAME}:latest"
+# Subir ngrok em container separado
+docker run -d --name ${NGROK_NAME} --network host \
+  -e NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN} \
+  ngrok/ngrok:latest http ${HOST_PORT} > "${LOG_FILE}" 2>&1 || true
 
-# Inicia Ngrok desacoplado do shell e salva logs
-nohup ngrok http ${HOST_PORT} > "${LOG_FILE}" 2>&1 &
-
-# Aguarda o Ngrok inicializar
+# Aguardar ngrok subir e pegar URL
 sleep 5
+NGROK_URL=$(docker logs ${NGROK_NAME} 2>&1 | grep -oE "https://[0-9a-z]+\.ngrok-free\.app" | head -n 1)
 
-# Captura URL do Ngrok pela API local
-NGROK_URL=$(curl --silent --max-time 10 http://127.0.0.1:4040/api/tunnels | jq -r '.tunnels[0].public_url')
-
-if [[ -z "$NGROK_URL" || "$NGROK_URL" == "null" ]]; then
-  echo "Erro: não foi possível obter a URL do Ngrok" >&2
+if [ -z "$NGROK_URL" ]; then
+  echo "[ERRO] Não foi possível capturar a URL do Ngrok"
   exit 1
 fi
 
-# Grava a URL no log para debug futuro
-echo "[INFO] URL gerada: $NGROK_URL" | tee -a "${LOG_FILE}"
-
-# Só imprime a URL para o workflow capturar
+echo "[INFO] URL pública: $NGROK_URL"
 echo "$NGROK_URL"
