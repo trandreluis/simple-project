@@ -6,54 +6,42 @@ APP_NAME="simple-project-pr${PR_NUMBER}"
 NGROK_NAME="ngrok-pr${PR_NUMBER}"
 HOST_PORT=$((8000 + PR_NUMBER))
 CACHE_DIR="/tmp/.buildx-cache"
-LOG_FILE="/tmp/${APP_NAME}.log"
+LOG_FILE="/tmp/${NGROK_NAME}.log"
 
-echo "[INFO] Iniciando preview para PR #${PR_NUMBER}"
+echo "[INFO] Iniciando preview para PR #${PR_NUMBER} na porta ${HOST_PORT}"
 
-# Construir imagem
-docker buildx build \
-  --cache-to=type=local,dest=${CACHE_DIR},mode=max \
+# Build da imagem
+docker buildx build --load \
+  --cache-to=type=local,dest=${CACHE_DIR} \
   --cache-from=type=local,src=${CACHE_DIR} \
-  -t ${APP_NAME}:latest \
-  --load .
+  -t ${APP_NAME}:latest .
 
-# Rodar container da aplicação
+# Subir container da aplicação
 docker run -d --name ${APP_NAME} -p ${HOST_PORT}:8080 ${APP_NAME}:latest
 
-# Verificar se token do Ngrok está configurado
-if [ -z "$NGROK_AUTHTOKEN" ]; then
-  echo "[ERRO] NGROK_AUTHTOKEN não definido. Configure como secret no GitHub."
+# Garantir que o container subiu
+sleep 5
+if ! docker ps --format '{{.Names}}' | grep -q "^${APP_NAME}$"; then
+  echo "[ERRO] Falha ao iniciar container ${APP_NAME}" >&2
   exit 1
 fi
 
-# Subir ngrok em container separado
-echo "[INFO] Subindo container do ngrok..."
-docker run -d --name ${NGROK_NAME} --network host \
+# Subir container do Ngrok
+echo "[INFO] Iniciando ngrok..."
+docker run -d --name ${NGROK_NAME} \
   -e NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN} \
-  ngrok/ngrok:latest http ${HOST_PORT} > "${LOG_FILE}" 2>&1
+  -v /tmp/ngrok-${PR_NUMBER}:/tmp \
+  ngrok/ngrok:latest http host.docker.internal:${HOST_PORT} > "${LOG_FILE}" 2>&1
 
-# Debug inicial
-echo "[DEBUG] Verificando se o container do ngrok subiu..."
-docker ps -a | grep ${NGROK_NAME} || echo "[ERRO] Container ngrok não encontrado"
+sleep 5
 
-# Aguardar até 30s pelo ngrok
-NGROK_URL=""
-for i in {1..30}; do
-  NGROK_URL=$(docker logs ${NGROK_NAME} 2>&1 | grep -oE "https://[0-9a-z]+\.ngrok-free\.app" | head -n 1 || true)
-  if [ -n "$NGROK_URL" ]; then
-    break
-  fi
-  echo "[INFO] Aguardando ngrok subir... (${i}s)"
-  sleep 1
-done
+# Pegar URL do Ngrok
+URL=$(docker logs ${NGROK_NAME} 2>&1 | grep -o "https://[0-9a-z]*\.ngrok-free\.app" | head -n 1)
 
-if [ -z "$NGROK_URL" ]; then
-  echo "[ERRO] Não foi possível capturar a URL do Ngrok após 30s."
-  echo "[DEBUG] Logs do container do ngrok:"
-  docker logs ${NGROK_NAME} || true
+if [ -z "$URL" ]; then
+  echo "[ERRO] Não foi possível capturar a URL do Ngrok. Veja os logs em ${LOG_FILE}" >&2
   exit 1
 fi
 
-echo "[INFO] URL pública: $NGROK_URL"
-# A URL do ngrok será a última linha da saída (mantendo compatibilidade com o workflow)
-echo "$NGROK_URL"
+echo "[INFO] Preview disponível em: ${URL}"
+echo "${URL}"
