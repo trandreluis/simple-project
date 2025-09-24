@@ -25,8 +25,9 @@ docker run -d --name ${APP_NAME} -p ${HOST_PORT}:8080 ${APP_NAME}:latest
 echo "[INFO] Subindo container do ngrok ${NGROK_NAME}..."
 docker run -d --name ${NGROK_NAME} \
   -e NGROK_AUTHTOKEN="${NGROK_AUTHTOKEN}" \
+  --network host \
   -p ${API_PORT}:4040 \
-  ngrok/ngrok:latest http host.docker.internal:${HOST_PORT} > /tmp/${NGROK_NAME}.log 2>&1
+  ngrok/ngrok:latest http ${HOST_PORT} > /tmp/${NGROK_NAME}.log 2>&1
 
 # Aguardar o ngrok iniciar e capturar a URL pela API
 echo "[INFO] Aguardando ngrok inicializar na porta ${API_PORT}..."
