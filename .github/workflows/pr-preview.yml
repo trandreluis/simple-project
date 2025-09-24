@@ -18,32 +18,9 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      - name: Cache Maven dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-maven-
-
-      - name: Cache Docker layers
-        uses: actions/cache@v4
-        with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-docker-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-docker-
-
-      - name: Configure Ngrok
-        if: github.event.action != 'closed'
-        run: |
-          ngrok config add-authtoken ${{ secrets.NGROK_AUTHTOKEN }}
-
       - name: Build simple-project app
         if: github.event.action != 'closed'
-        run: |
-          chmod +x mvnw
-          ./mvnw clean package -DskipTests
+        run: ./mvnw clean package -DskipTests
 
       - name: Start Preview (container + ngrok)
         if: github.event.action != 'closed'
@@ -51,11 +28,6 @@ jobs:
         run: |
           chmod +x .github/scripts/start-preview.sh
           URL=$(.github/scripts/start-preview.sh ${{ github.event.number }})
-          if [[ "$URL" != https* ]]; then
-            echo "Erro: saída inválida do start-preview.sh: $URL"
-            exit 1
-          fi
-          echo "Preview URL gerada: $URL"
           echo "preview_url=$URL" >> $GITHUB_OUTPUT
 
       - name: Comment PR with Preview URL

@@ -2,58 +2,35 @@
 set -e
 
 PR_NUMBER=$1
-PORT=$((8000 + PR_NUMBER % 1000)) # porta única para cada PR
-APP_NAME="simple-project-pr${PR_NUMBER}"
-NGROK_NAME="ngrok-pr${PR_NUMBER}"
-CACHE_DIR="/tmp/.buildx-cache"
+APP_NAME="simple-project"
+CONTAINER_NAME="${APP_NAME}-pr${PR_NUMBER}"
+HOST_PORT=$((8000 + PR_NUMBER))
 
-# Se container já existe, remover para atualizar
-docker rm -f ${APP_NAME} || true
+echo "[INFO] Iniciando preview para PR #${PR_NUMBER} na porta ${HOST_PORT}..."
 
-# Garantir que o builder buildx existe
-if ! docker buildx inspect buildx-simple >/dev/null 2>&1; then
-  docker buildx create --use --name buildx-simple
-else
-  docker buildx use buildx-simple
+# Build da imagem
+docker build -t "${CONTAINER_NAME}:latest" .
+
+# Remove container antigo se existir
+if [ "$(docker ps -aq -f name=${CONTAINER_NAME})" ]; then
+  docker rm -f "${CONTAINER_NAME}" || true
 fi
 
-# Build imagem docker com cache e carregando no Docker local
-docker buildx build \
-  --cache-from=type=local,src=${CACHE_DIR} \
-  --cache-to=type=local,dest=${CACHE_DIR}-new,mode=max \
-  -t ${APP_NAME}:latest . \
-  --load
+# Sobe o container com porta exclusiva
+docker run -d --name "${CONTAINER_NAME}" -p ${HOST_PORT}:8080 "${CONTAINER_NAME}:latest"
 
-# Atualizar cache
-rm -rf ${CACHE_DIR}
-mv ${CACHE_DIR}-new ${CACHE_DIR}
+# Inicia Ngrok com log dedicado para o PR
+ngrok http ${HOST_PORT} > "ngrok-${PR_NUMBER}.log" 2>&1 &
+sleep 5
 
-# Rodar container da app (captura o ID mas não imprime)
-CONTAINER_ID=$(docker run -d --name ${APP_NAME} -p ${PORT}:8080 ${APP_NAME}:latest)
+# Captura URL do Ngrok
+NGROK_URL=$(curl --silent --max-time 10 http://127.0.0.1:4040/api/tunnels | jq -r '.tunnels[0].public_url')
 
-# Matar ngrok anterior se existir
-pkill -f "${NGROK_NAME}" || true
-
-# Rodar ngrok apontando para porta do container
-nohup ngrok http ${PORT} --name ${NGROK_NAME} > /tmp/${NGROK_NAME}.log 2>&1 &
-
-# Tentar capturar a URL do Ngrok com retries
-URL=""
-for i in {1..10}; do
-  sleep 3
-  URL=$(curl --silent http://127.0.0.1:4040/api/tunnels \
-    | jq -r ".tunnels[] | select(.config.addr==\"http://localhost:${PORT}\") | .public_url")
-  if [ -n "$URL" ] && [ "$URL" != "null" ]; then
-    break
-  fi
-done
-
-if [ -z "$URL" ] || [ "$URL" = "null" ]; then
-  echo "[ERRO] Não foi possível capturar a URL do Ngrok após várias tentativas." >&2
-  docker logs ${APP_NAME} || true
-  tail -n 50 /tmp/${NGROK_NAME}.log || true
+if [[ -z "$NGROK_URL" || "$NGROK_URL" == "null" ]]; then
+  echo "Erro: não foi possível obter a URL do Ngrok" >&2
   exit 1
 fi
 
-# ⚠️ Importante: imprimir só a URL, sem logs extras
-echo "${URL}"
+echo "[INFO] Preview disponível em: $NGROK_URL"
+# Só imprime a URL para o workflow capturar
+echo "$NGROK_URL"
