@@ -27,7 +27,7 @@ docker run -d --name ${NGROK_NAME} \
   -e NGROK_AUTHTOKEN="${NGROK_AUTHTOKEN}" \
   -p ${API_PORT}:4040 \
   --network bridge \
-  ngrok/ngrok:latest http ${HOST_PORT} > /tmp/${NGROK_NAME}.log 2>&1
+  ngrok/ngrok:latest http ${APP_NAME}:8080 > /tmp/${NGROK_NAME}.log 2>&1
 
 # Aguardar o ngrok iniciar e capturar a URL pela API
 echo "[INFO] Aguardando ngrok inicializar na porta ${API_PORT}..."
