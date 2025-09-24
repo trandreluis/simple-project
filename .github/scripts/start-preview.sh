@@ -4,46 +4,62 @@ set -e
 PR_NUMBER=$1
 APP_NAME="simple-project-pr${PR_NUMBER}"
 NGROK_NAME="ngrok-pr${PR_NUMBER}"
+HOST_PORT=$((8000 + PR_NUMBER))
 CACHE_DIR="/tmp/.buildx-cache"
 NGROK_LOG="/tmp/${NGROK_NAME}.log"
 
-echo "[INFO] Iniciando preview para PR #${PR_NUMBER}"
+echo "[INFO] Subindo preview para PR #${PR_NUMBER} na porta ${HOST_PORT}"
 
-# Garantir que containers antigos não causem conflito
-docker rm -f ${APP_NAME} || true
-docker rm -f ${NGROK_NAME} || true
+# Garantir que não existam containers antigos
+docker rm -f ${APP_NAME} 2>/dev/null || true
+docker rm -f ${NGROK_NAME} 2>/dev/null || true
 
-# Build da imagem
-docker build \
+# Garantir que existe um builder buildx com driver containerd
+if ! docker buildx inspect buildx-simple >/dev/null 2>&1; then
+  echo "[INFO] Criando builder buildx 'buildx-simple' com driver containerd..."
+  docker buildx create --name buildx-simple --driver docker-container --use
+  docker buildx inspect --bootstrap
+else
+  echo "[INFO] Reutilizando builder existente 'buildx-simple'"
+  docker buildx use buildx-simple
+fi
+
+# Fazer build com cache
+docker buildx build \
   --cache-from=type=local,src=${CACHE_DIR} \
   --cache-to=type=local,dest=${CACHE_DIR},mode=max \
-  -t ${APP_NAME}:latest .
+  -t ${APP_NAME}:latest \
+  --load .
 
-# Subir app container
-docker run -d --name ${APP_NAME} -p 0:8080 ${APP_NAME}:latest
+# Subir container da aplicação
+docker run -d --name ${APP_NAME} -p ${HOST_PORT}:8080 ${APP_NAME}:latest
 
-# Pegar porta real mapeada
-HOST_PORT=$(docker inspect --format='{{(index (index .NetworkSettings.Ports "8080/tcp") 0).HostPort}}' ${APP_NAME})
-echo "[INFO] Aplicação rodando em porta local ${HOST_PORT}"
+# Subir ngrok em segundo plano
+docker run -d --name ${NGROK_NAME} \
+  -e NGROK_AUTHTOKEN="${NGROK_AUTHTOKEN}" \
+  --net=host \
+  ngrok/ngrok:latest http ${HOST_PORT} > "${NGROK_LOG}" 2>&1
 
-# Iniciar Ngrok em container separado e logar no arquivo
-docker run -d \
-  --name ${NGROK_NAME} \
-  --network=container:${APP_NAME} \
-  -e NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN} \
-  ngrok/ngrok:latest http 8080 --log=stdout > "${NGROK_LOG}" 2>&1
-
-# Esperar até capturar a URL
-for i in {1..15}; do
-  URL=$(grep -o 'https://[0-9a-zA-Z.-]*\.ngrok-free\.app' "${NGROK_LOG}" | head -n1 || true)
+# Aguardar até que o túnel esteja pronto
+echo "[INFO] Aguardando URL pública do Ngrok..."
+URL=""
+for i in {1..10}; do
+  sleep 3
+  URL=$(docker logs ${NGROK_NAME} 2>/dev/null | grep -o 'https://[a-zA-Z0-9.-]*\.ngrok-free\.app' | head -n1 || true)
   if [ -n "$URL" ]; then
-    echo "[INFO] Ngrok URL capturada: $URL"
-    echo "$URL"
-    exit 0
+    break
   fi
-  echo "[INFO] Aguardando URL do Ngrok... Tentativa $i/15"
-  sleep 2
 done
 
-echo "[ERRO] Não foi possível capturar a URL do Ngrok. Veja os logs em ${NGROK_LOG}"
-exit 1
+if [ -z "$URL" ]; then
+  echo "[ERRO] Não foi possível capturar a URL do Ngrok. Veja os logs em ${NGROK_LOG}"
+  exit 1
+fi
+
+echo "[INFO] Preview rodando:"
+echo "       App:   ${APP_NAME}"
+echo "       Porta: ${HOST_PORT}"
+echo "       URL:   ${URL}"
+
+# Retornar apenas a URL no stdout (para o workflow capturar)
+echo "$URL"
