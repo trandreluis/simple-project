@@ -4,10 +4,6 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, closed]
 
-permissions:
-  pull-requests: write
-  contents: read
-
 jobs:
   preview:
     runs-on: self-hosted
@@ -31,6 +27,8 @@ jobs:
       - name: Start Preview (container + ngrok)
         if: github.event.action != 'closed'
         id: preview
+        env:
+          NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTHTOKEN }}
         run: |
           chmod +x .github/scripts/start-preview.sh
           RAW_OUTPUT=$(.github/scripts/start-preview.sh ${{ github.event.number }})
