@@ -34,6 +34,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-docker-
 
+      - name: Configure Ngrok
+        if: github.event.action != 'closed'
+        run: |
+          ngrok config add-authtoken ${{ secrets.NGROK_AUTHTOKEN }}
+
       - name: Build simple-project app
         if: github.event.action != 'closed'
         run: |
