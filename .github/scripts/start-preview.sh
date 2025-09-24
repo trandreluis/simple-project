@@ -5,46 +5,46 @@ PR_NUMBER=$1
 APP_NAME="simple-project-pr${PR_NUMBER}"
 NGROK_NAME="ngrok-pr${PR_NUMBER}"
 CACHE_DIR="/tmp/.buildx-cache"
-LOG_FILE="/tmp/${NGROK_NAME}.log"
 
 echo "[INFO] Iniciando preview para PR #${PR_NUMBER}"
 
-# Garantir que containers antigos não atrapalhem
-docker rm -f ${APP_NAME} 2>/dev/null || true
-docker rm -f ${NGROK_NAME} 2>/dev/null || true
-
-# Build da imagem
-docker buildx build --load \
+# Construir a imagem
+docker buildx build \
   --cache-to=type=local,dest=${CACHE_DIR} \
   --cache-from=type=local,src=${CACHE_DIR} \
-  -t ${APP_NAME}:latest .
+  -t ${APP_NAME}:latest \
+  . --load
+
+# Calcular porta baseada no número do PR
+HOST_PORT=$((8000 + PR_NUMBER))
 
 # Subir container da aplicação
-docker run -d --name ${APP_NAME} ${APP_NAME}:latest
+docker run -d --rm \
+  --name ${APP_NAME} \
+  -p ${HOST_PORT}:8080 \
+  ${APP_NAME}:latest
 
-# Garantir que o container subiu
-sleep 5
-if ! docker ps --format '{{.Names}}' | grep -q "^${APP_NAME}$"; then
-  echo "[ERRO] Falha ao iniciar container ${APP_NAME}" >&2
-  exit 1
-fi
+echo "[INFO] Aplicação rodando em porta local ${HOST_PORT}"
 
-# Subir container do Ngrok conectado diretamente à rede do app
-echo "[INFO] Iniciando ngrok..."
-docker run -d --name ${NGROK_NAME} \
-  --network container:${APP_NAME} \
+# Subir túnel ngrok no mesmo namespace de rede do container
+docker run -d \
+  --name ${NGROK_NAME} \
+  --network=container:${APP_NAME} \
   -e NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN} \
-  ngrok/ngrok:latest http 8080 > "${LOG_FILE}" 2>&1
+  ngrok/ngrok:latest http 8080 > /tmp/${NGROK_NAME}.cid
 
-sleep 5
+# Tentar capturar a URL do túnel
+for i in {1..10}; do
+  URL=$(docker logs ${NGROK_NAME} 2>&1 | grep -o 'https://[0-9a-zA-Z.-]*\.ngrok-free\.app' | head -n1 || true)
+  if [ -n "$URL" ]; then
+    echo "[INFO] Ngrok URL capturada: $URL"
+    echo "$URL"
+    exit 0
+  fi
+  echo "[INFO] Aguardando URL do Ngrok... Tentativa $i/10"
+  sleep 2
+done
 
-# Pegar URL do Ngrok
-URL=$(docker logs ${NGROK_NAME} 2>&1 | grep -o "https://[0-9a-z]*\.ngrok-free\.app" | head -n 1)
-
-if [ -z "$URL" ]; then
-  echo "[ERRO] Não foi possível capturar a URL do Ngrok. Veja os logs em ${LOG_FILE}" >&2
-  exit 1
-fi
-
-echo "[INFO] Preview disponível em: ${URL}"
-echo "${URL}"
+echo "[ERRO] Não foi possível capturar a URL do Ngrok. Veja os logs em /tmp/${NGROK_NAME}.log"
+docker logs ${NGROK_NAME} &> /tmp/${NGROK_NAME}.log
+exit 1
