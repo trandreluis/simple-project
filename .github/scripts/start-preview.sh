@@ -4,19 +4,24 @@ set -e
 PR_NUMBER=$1
 APP_NAME="simple-project-pr${PR_NUMBER}"
 NGROK_NAME="ngrok-pr${PR_NUMBER}"
-CACHE_DIR="/tmp/.buildx-cache"
-
-echo "[INFO] Iniciando preview para PR #${PR_NUMBER}"
-
-# Construir a imagem
-docker buildx build \
-  --cache-to=type=local,dest=${CACHE_DIR} \
-  --cache-from=type=local,src=${CACHE_DIR} \
-  -t ${APP_NAME}:latest \
-  . --load
-
-# Calcular porta baseada no número do PR
 HOST_PORT=$((8000 + PR_NUMBER))
+
+echo "[INFO] Iniciando preview para PR #${PR_NUMBER} na porta ${HOST_PORT}"
+
+# Garantir que não exista container antigo com mesmo nome
+docker rm -f ${APP_NAME} 2>/dev/null || true
+docker rm -f ${NGROK_NAME} 2>/dev/null || true
+
+# Build da imagem (com cache para performance)
+docker buildx build \
+  --load \
+  --cache-from=type=local,src=/tmp/.buildx-cache \
+  --cache-to=type=local,dest=/tmp/.buildx-cache-new,mode=max \
+  -t ${APP_NAME}:latest .
+
+# Trocar cache de forma atômica
+rm -rf /tmp/.buildx-cache
+mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
 # Subir container da aplicação
 docker run -d --rm \
@@ -24,9 +29,7 @@ docker run -d --rm \
   -p ${HOST_PORT}:8080 \
   ${APP_NAME}:latest
 
-echo "[INFO] Aplicação rodando em porta local ${HOST_PORT}"
-
-# Subir túnel ngrok no mesmo namespace de rede do container
+# Subir túnel ngrok no mesmo namespace de rede do container da aplicação
 docker run -d \
   --name ${NGROK_NAME} \
   --network=container:${APP_NAME} \
