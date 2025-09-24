@@ -8,7 +8,7 @@ CACHE_DIR="/tmp/.buildx-cache"
 
 echo "[INFO] Removendo preview para PR #${PR_NUMBER}"
 
-# Se o container da aplicação existir mas estiver parado, mostrar logs
+# Se o container do app existir mas não estiver rodando, mostrar logs antes de remover
 if docker ps -a --format '{{.Names}} {{.Status}}' | grep -q "${APP_NAME}"; then
   STATUS=$(docker inspect -f '{{.State.Status}}' ${APP_NAME} || echo "desconhecido")
   if [ "$STATUS" != "running" ]; then
@@ -17,11 +17,13 @@ if docker ps -a --format '{{.Names}} {{.Status}}' | grep -q "${APP_NAME}"; then
   fi
 fi
 
-# Parar e remover containers
+# Parar e remover container da aplicação
 docker rm -f ${APP_NAME} || true
+
+# Parar e remover container do Ngrok
 docker rm -f ${NGROK_NAME} || true
 
-# Remover imagem associada
+# Remover imagem associada ao PR
 docker rmi -f ${APP_NAME}:latest || true
 
 # Limpar camadas órfãs do buildx
