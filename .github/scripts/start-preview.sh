@@ -13,20 +13,26 @@ echo "[INFO] Iniciando preview para PR #${PR_NUMBER} na porta ${HOST_PORT}"
 docker rm -f ${APP_NAME} 2>/dev/null || true
 docker rm -f ${NGROK_NAME} 2>/dev/null || true
 
+# Garantir que a rede existe
+docker network create preview-net 2>/dev/null || true
+
 # Build da imagem sem cache
 echo "[INFO] Build da imagem Docker..."
 docker build -t ${APP_NAME}:latest .
 
-# Rodar o container da aplicação
+# Rodar o container da aplicação na rede preview-net
 echo "[INFO] Subindo container da aplicação ${APP_NAME}..."
-docker run -d --name ${APP_NAME} -p ${HOST_PORT}:8080 ${APP_NAME}:latest
+docker run -d --name ${APP_NAME} \
+  --network preview-net \
+  -p ${HOST_PORT}:8080 \
+  ${APP_NAME}:latest
 
-# Rodar o container do ngrok expondo API na porta 4040+PR_NUMBER
+# Rodar o container do ngrok na mesma rede
 echo "[INFO] Subindo container do ngrok ${NGROK_NAME}..."
 docker run -d --name ${NGROK_NAME} \
+  --network preview-net \
   -e NGROK_AUTHTOKEN="${NGROK_AUTHTOKEN}" \
   -p ${API_PORT}:4040 \
-  --network bridge \
   ngrok/ngrok:latest http ${APP_NAME}:8080 > /tmp/${NGROK_NAME}.log 2>&1
 
 # Aguardar o ngrok iniciar e capturar a URL pela API
