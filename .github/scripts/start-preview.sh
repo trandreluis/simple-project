@@ -5,14 +5,25 @@ PR_NUMBER=$1
 PORT=$((8000 + PR_NUMBER % 1000)) # porta única para cada PR
 APP_NAME="simple-project-pr${PR_NUMBER}"
 NGROK_NAME="ngrok-pr${PR_NUMBER}"
+CACHE_DIR="/tmp/.buildx-cache"
 
 echo "[INFO] Iniciando preview para PR #${PR_NUMBER} na porta ${PORT}"
 
 # Se container já existe, remover para atualizar
 docker rm -f ${APP_NAME} || true
 
-# Build imagem docker
-docker build -t ${APP_NAME}:latest .
+# Garantir que o builder buildx existe
+docker buildx create --use --name buildx-simple || docker buildx use buildx-simple
+
+# Build imagem docker com cache
+docker buildx build \
+  --cache-from=type=local,src=${CACHE_DIR} \
+  --cache-to=type=local,dest=${CACHE_DIR}-new,mode=max \
+  -t ${APP_NAME}:latest .
+
+# Atualizar cache
+rm -rf ${CACHE_DIR}
+mv ${CACHE_DIR}-new ${CACHE_DIR}
 
 # Rodar container da app
 docker run -d --name ${APP_NAME} -p ${PORT}:8080 ${APP_NAME}:latest
