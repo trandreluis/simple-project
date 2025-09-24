@@ -27,9 +27,14 @@ if [ -z "$NGROK_AUTHTOKEN" ]; then
 fi
 
 # Subir ngrok em container separado
+echo "[INFO] Subindo container do ngrok..."
 docker run -d --name ${NGROK_NAME} --network host \
   -e NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN} \
-  ngrok/ngrok:latest http ${HOST_PORT} > "${LOG_FILE}" 2>&1 || true
+  ngrok/ngrok:latest http ${HOST_PORT} > "${LOG_FILE}" 2>&1
+
+# Debug inicial
+echo "[DEBUG] Verificando se o container do ngrok subiu..."
+docker ps -a | grep ${NGROK_NAME} || echo "[ERRO] Container ngrok não encontrado"
 
 # Aguardar até 30s pelo ngrok
 NGROK_URL=""
