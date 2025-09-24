@@ -45,26 +45,6 @@ jobs:
         id: preview
         run: |
           chmod +x .github/scripts/start-preview.sh
-          CACHE_DIR="/tmp/.buildx-cache"
-          BUILDER_NAME="buildx-simple"
-          
-          # garantir builder buildx
-          if ! docker buildx inspect $BUILDER_NAME >/dev/null 2>&1; then
-            docker buildx create --use --name $BUILDER_NAME
-          else
-            docker buildx use $BUILDER_NAME
-          fi
-
-          # build imagem com cache e --load para Docker local
-          docker buildx build \
-            --cache-from=type=local,src=${CACHE_DIR} \
-            --cache-to=type=local,dest=${CACHE_DIR}-new,mode=max \
-            -t simple-project-pr${{ github.event.number }}:latest . \
-            --load
-
-          rm -rf ${CACHE_DIR}
-          mv ${CACHE_DIR}-new ${CACHE_DIR}
-
           URL=$(.github/scripts/start-preview.sh ${{ github.event.number }})
           echo "preview_url=$URL" >> $GITHUB_OUTPUT
 

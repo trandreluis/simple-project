@@ -39,9 +39,23 @@ pkill -f "${NGROK_NAME}" || true
 # Rodar ngrok apontando para porta do container
 nohup ngrok http ${PORT} --name ${NGROK_NAME} > /tmp/${NGROK_NAME}.log 2>&1 &
 
-# Esperar ngrok subir e pegar URL
-sleep 5
-URL=$(curl --silent http://127.0.0.1:4040/api/tunnels | jq -r ".tunnels[] | select(.config.addr==\"http://localhost:${PORT}\") | .public_url")
+# Tentar capturar a URL do Ngrok com retries
+URL=""
+for i in {1..5}; do
+  sleep 2
+  URL=$(curl --silent http://127.0.0.1:4040/api/tunnels \
+    | jq -r ".tunnels[] | select(.config.addr==\"http://localhost:${PORT}\") | .public_url")
+  if [ -n "$URL" ] && [ "$URL" != "null" ]; then
+    break
+  fi
+  echo "[WARN] Tentativa $i: ainda não capturou a URL do Ngrok."
+done
+
+if [ -z "$URL" ] || [ "$URL" = "null" ]; then
+  echo "[ERRO] Não foi possível capturar a URL do Ngrok após várias tentativas."
+  exit 1
+fi
 
 echo "[INFO] Preview URL: ${URL}"
+# Imprime apenas a URL (para o workflow capturar)
 echo "${URL}"
