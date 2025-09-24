@@ -21,19 +21,17 @@ echo "[INFO] Subindo container da aplicação ${APP_NAME}..."
 docker run -d --name ${APP_NAME} -p ${HOST_PORT}:8080 ${APP_NAME}:latest
 
 echo "[INFO] Subindo container do ngrok ${NGROK_NAME}..."
-# Rodar o container do ngrok com a API exposta
+# Rodar o container do ngrok (usando rede do host)
 docker run -d --name ${NGROK_NAME} \
   -e NGROK_AUTHTOKEN="${NGROK_AUTHTOKEN}" \
-  -p 4040:4040 \
+  --network host \
   ngrok/ngrok:latest http ${HOST_PORT} > /tmp/${NGROK_NAME}.log 2>&1
 
-# Aguardar o ngrok iniciar
+# Aguardar o ngrok iniciar e capturar a URL
 sleep 5
+URL=$(docker logs ${NGROK_NAME} 2>&1 | grep -o 'https://[0-9a-z]*\.ngrok-free\.app' | head -n 1)
 
-# Capturar a URL pública via API local
-URL=$(curl --silent http://127.0.0.1:4040/api/tunnels | jq -r '.tunnels[0].public_url')
-
-if [ -z "$URL" ] || [ "$URL" == "null" ]; then
+if [ -z "$URL" ]; then
   echo "[ERRO] Não foi possível capturar a URL do Ngrok. Veja os logs em /tmp/${NGROK_NAME}.log"
   exit 1
 fi
