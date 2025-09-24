@@ -7,8 +7,6 @@ APP_NAME="simple-project-pr${PR_NUMBER}"
 NGROK_NAME="ngrok-pr${PR_NUMBER}"
 CACHE_DIR="/tmp/.buildx-cache"
 
-echo "[INFO] Iniciando preview para PR #${PR_NUMBER} na porta ${PORT}"
-
 # Se container já existe, remover para atualizar
 docker rm -f ${APP_NAME} || true
 
@@ -41,21 +39,21 @@ nohup ngrok http ${PORT} --name ${NGROK_NAME} > /tmp/${NGROK_NAME}.log 2>&1 &
 
 # Tentar capturar a URL do Ngrok com retries
 URL=""
-for i in {1..5}; do
-  sleep 2
+for i in {1..10}; do
+  sleep 3
   URL=$(curl --silent http://127.0.0.1:4040/api/tunnels \
     | jq -r ".tunnels[] | select(.config.addr==\"http://localhost:${PORT}\") | .public_url")
   if [ -n "$URL" ] && [ "$URL" != "null" ]; then
     break
   fi
-  echo "[WARN] Tentativa $i: ainda não capturou a URL do Ngrok."
 done
 
 if [ -z "$URL" ] || [ "$URL" = "null" ]; then
-  echo "[ERRO] Não foi possível capturar a URL do Ngrok após várias tentativas."
+  echo "[ERRO] Não foi possível capturar a URL do Ngrok após várias tentativas." >&2
+  docker logs ${APP_NAME} || true
+  tail -n 50 /tmp/${NGROK_NAME}.log || true
   exit 1
 fi
 
-echo "[INFO] Preview URL: ${URL}"
-# Imprime apenas a URL (para o workflow capturar)
+# ⚠️ Importante: imprimir só a URL, sem logs extras
 echo "${URL}"

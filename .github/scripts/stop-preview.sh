@@ -8,7 +8,16 @@ CACHE_DIR="/tmp/.buildx-cache"
 
 echo "[INFO] Removendo preview para PR #${PR_NUMBER}"
 
-# Parar container e remover
+# Se o container existir mas estiver em estado de falha, mostrar logs antes de remover
+if docker ps -a --format '{{.Names}} {{.Status}}' | grep -q "${APP_NAME}"; then
+  STATUS=$(docker inspect -f '{{.State.Status}}' ${APP_NAME} || echo "desconhecido")
+  if [ "$STATUS" != "running" ]; then
+    echo "[WARN] Container ${APP_NAME} não está rodando (status: $STATUS). Exibindo últimos logs:"
+    docker logs --tail=100 ${APP_NAME} || true
+  fi
+fi
+
+# Parar e remover container
 docker rm -f ${APP_NAME} || true
 
 # Remover imagem associada ao PR
