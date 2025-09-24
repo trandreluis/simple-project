@@ -1,5 +1,5 @@
-# Imagem base com JDK 25 (Temurin)
-FROM eclipse-temurin:25-jdk-alpine
+# Imagem base com JDK 21 (LTS estável)
+FROM eclipse-temurin:21-jdk-alpine
 
 WORKDIR /app
 

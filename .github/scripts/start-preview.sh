@@ -2,30 +2,53 @@
 set -e
 
 PR_NUMBER=$1
-PORT=$((8000 + PR_NUMBER % 1000)) # porta única para cada PR
 APP_NAME="simple-project-pr${PR_NUMBER}"
 NGROK_NAME="ngrok-pr${PR_NUMBER}"
+HOST_PORT=$((8000 + PR_NUMBER))
+API_PORT=$((4040 + PR_NUMBER))
 
-echo "[INFO] Iniciando preview para PR #${PR_NUMBER} na porta ${PORT}"
+echo "[INFO] Iniciando preview para PR #${PR_NUMBER} na porta ${HOST_PORT}"
 
-# Se container já existe, remover para atualizar
-docker rm -f ${APP_NAME} || true
+# Garantir que não há containers anteriores
+docker rm -f ${APP_NAME} 2>/dev/null || true
+docker rm -f ${NGROK_NAME} 2>/dev/null || true
 
-# Build imagem docker
+# Garantir que a rede existe
+docker network create preview-net 2>/dev/null || true
+
+# Build da imagem sem cache
+echo "[INFO] Build da imagem Docker..."
 docker build -t ${APP_NAME}:latest .
 
-# Rodar container da app
-docker run -d --name ${APP_NAME} -p ${PORT}:8080 ${APP_NAME}:latest
+# Rodar o container da aplicação na rede preview-net
+echo "[INFO] Subindo container da aplicação ${APP_NAME}..."
+docker run -d --name ${APP_NAME} \
+  --network preview-net \
+  -p ${HOST_PORT}:8080 \
+  ${APP_NAME}:latest
 
-# Matar ngrok anterior se existir
-pkill -f "${NGROK_NAME}" || true
+# Rodar o container do ngrok na mesma rede
+echo "[INFO] Subindo container do ngrok ${NGROK_NAME}..."
+docker run -d --name ${NGROK_NAME} \
+  --network preview-net \
+  -e NGROK_AUTHTOKEN="${NGROK_AUTHTOKEN}" \
+  -p ${API_PORT}:4040 \
+  ngrok/ngrok:latest http ${APP_NAME}:8080 > /tmp/${NGROK_NAME}.log 2>&1
 
-# Rodar ngrok apontando para porta do container
-nohup ngrok http ${PORT} --name ${NGROK_NAME} > /tmp/${NGROK_NAME}.log 2>&1 &
+# Aguardar o ngrok iniciar e capturar a URL pela API
+echo "[INFO] Aguardando ngrok inicializar na porta ${API_PORT}..."
+for i in {1..10}; do
+  sleep 2
+  URL=$(curl -s http://127.0.0.1:${API_PORT}/api/tunnels | grep -o 'https://[0-9a-z]*\.ngrok-free\.app' | head -n 1 || true)
+  if [ -n "$URL" ]; then
+    break
+  fi
+done
 
-# Esperar ngrok subir e pegar URL
-sleep 5
-URL=$(curl --silent http://127.0.0.1:4040/api/tunnels | jq -r ".tunnels[] | select(.config.addr==\"http://localhost:${PORT}\") | .public_url")
+if [ -z "$URL" ]; then
+  echo "[ERRO] Não foi possível capturar a URL do Ngrok. Veja os logs em /tmp/${NGROK_NAME}.log"
+  exit 1
+fi
 
-echo "[INFO] Preview URL: ${URL}"
-echo "${URL}"
+echo "[INFO] URL pública gerada: $URL"
+echo "$URL"
