@@ -4,6 +4,10 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, closed]
 
+permissions:
+  pull-requests: write
+  contents: read
+
 jobs:
   preview:
     runs-on: self-hosted
@@ -12,23 +16,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK 25
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
-          java-version: '25'
+          java-version: '21'
           distribution: 'temurin'
 
       - name: Build simple-project app
         if: github.event.action != 'closed'
-        run: ./mvnw clean package -DskipTests
+        run: |
+          chmod +x ./mvnw
+          ./mvnw clean package -DskipTests
 
       - name: Start Preview (container + ngrok)
         if: github.event.action != 'closed'
         id: preview
+        env:
+          NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTHTOKEN }}
         run: |
           chmod +x .github/scripts/start-preview.sh
-          URL=$(.github/scripts/start-preview.sh ${{ github.event.number }})
+          RAW_OUTPUT=$(.github/scripts/start-preview.sh ${{ github.event.number }})
+          URL=$(echo "$RAW_OUTPUT" | tail -n 1)
+          HOST_PORT=$((8000 + ${{ github.event.number }}))
           echo "preview_url=$URL" >> $GITHUB_OUTPUT
+          echo "host_port=$HOST_PORT" >> $GITHUB_OUTPUT
 
       - name: Comment PR with Preview URL
         if: github.event.action != 'closed'
@@ -36,7 +47,8 @@ jobs:
         with:
           message: |
             🚀 Preview da aplicação *simple-project* para este PR:
-            ${{ steps.preview.outputs.preview_url }}
+            🌐 URL pública (Ngrok): ${{ steps.preview.outputs.preview_url }}
+            🖥️ Porta local usada no host: `${{ steps.preview.outputs.host_port }}`
             _(Permanece ativo até o PR ser fechado ou manualmente removido)_
 
       - name: Stop Preview on PR close
